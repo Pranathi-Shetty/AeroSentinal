@@ -1,11 +1,19 @@
 "use client";
 
+import { useEffect } from "react";
 import { useStore } from "@/lib/store";
-import { Activity, Thermometer, Wind, Droplets, ArrowDownToLine, Zap, ShieldAlert, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Activity, Thermometer, Wind, Droplets, ArrowDownToLine, Zap, ShieldAlert, CheckCircle2, AlertTriangle, Wifi, WifiOff, DollarSign } from "lucide-react";
 import clsx from "clsx";
 
 export default function DashboardPage() {
-  const { aircraft } = useStore();
+  const { aircraft, backendOnline, loading, error, fetchHealth, checkBackend } = useStore();
+
+  useEffect(() => {
+    checkBackend();
+    fetchHealth();
+    const interval = setInterval(() => fetchHealth(), 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, []);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -66,6 +74,18 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Connection status bar */}
+      <div className={clsx(
+        "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors",
+        backendOnline 
+          ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400" 
+          : "bg-amber-500/10 border border-amber-500/20 text-amber-400"
+      )}>
+        {backendOnline ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+        {backendOnline ? "Connected to FastAPI backend (live inference)" : "Backend offline — using local simulation fallback"}
+        {loading && <span className="ml-auto text-xs opacity-50">Updating...</span>}
+      </div>
+
       <header className="flex justify-between items-end pb-4 border-b border-white/10">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Fleet Overview</h1>
@@ -78,6 +98,51 @@ export default function DashboardPage() {
           </div>
         </div>
       </header>
+
+      {/* Cross-domain alerts */}
+      {aircraft.crossDomainAlerts.length > 0 && (
+        <section className="space-y-2">
+          {aircraft.crossDomainAlerts.map((alert, i) => (
+            <div key={i} className="glass-panel p-4 border-l-4 border-l-amber-500 bg-amber-500/5 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-gray-300">{alert}</p>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* AOG Risk Panel */}
+      {aircraft.aogRisk.totalRiskUsd > 0 && (
+        <div className={clsx("glass-panel p-6 border-l-4", {
+          "border-l-emerald-500 bg-emerald-500/5": aircraft.aogRisk.riskLevel === "LOW",
+          "border-l-amber-500 bg-amber-500/5": aircraft.aogRisk.riskLevel === "MEDIUM",
+          "border-l-rose-500 bg-rose-500/5": aircraft.aogRisk.riskLevel === "HIGH" || aircraft.aogRisk.riskLevel === "CRITICAL",
+        })}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <DollarSign className="w-6 h-6 text-amber-400" />
+              <div>
+                <h3 className="font-semibold">AOG Risk Assessment</h3>
+                <p className="text-sm text-gray-400">{aircraft.aogRisk.recommendation}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold text-amber-400">
+                ${(aircraft.aogRisk.totalRiskUsd / 1000).toFixed(0)}K
+              </div>
+              <div className="text-xs text-gray-400">P(failure): {(aircraft.aogRisk.probability * 100).toFixed(1)}%</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ACARS message */}
+      {aircraft.acarsMessage && (
+        <div className="glass-panel p-4 font-mono text-xs text-emerald-300 bg-emerald-500/5 border border-emerald-500/20 overflow-x-auto">
+          <span className="text-gray-500 mr-2">ACARS 220-char:</span>
+          {aircraft.acarsMessage}
+        </div>
+      )}
 
       <section>
         <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
