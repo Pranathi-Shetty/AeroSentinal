@@ -85,8 +85,8 @@ python scripts/generate_synthetic.py
 # Start MLflow tracking
 mlflow ui --port 5000
 
-# Start backend
-cd backend && uvicorn app.main:app --reload --port 8000
+# Start backend (from project root)
+python -m uvicorn backend.app.main:app --reload --port 8000
 
 # Start frontend (separate terminal)
 cd frontend && npm install && npm run dev
@@ -101,12 +101,12 @@ cd frontend && npm install && npm run dev
 - [ ] Hydraulics model (1D Conv Autoencoder)
 - [ ] Landing gear classifier (XGBoost + SMOTE)
 - [ ] APU health scoring (Random Forest)
-- [ ] ECS simulator + cross-domain coupling
-- [ ] Fusion API + ACARS compiler + AOG cost
+- [x] ECS simulator + cross-domain coupling (physics-informed, production)
+- [x] Fusion API + ACARS compiler + AOG cost scorer
 - [ ] ONNX export + latency benchmarks
-- [ ] What-if fault injection simulator
+- [x] What-if fault injection simulator (live re-runs, not canned)
 - [ ] NLP retrieval stand-in
-- [ ] Frontend dashboard + 3D + simulator
+- [x] Frontend dashboard + 3D aircraft viewer + simulator UI
 - [ ] Known-limitations documentation + final review
 
 ---

@@ -15,12 +15,18 @@ Usage:
 
 import os
 import sys
+import io
 import zipfile
 import argparse
 import hashlib
 from pathlib import Path
-from urllib.request import urlretrieve
-from urllib.error import URLError
+from urllib.request import urlretrieve, Request, urlopen
+from urllib.error import URLError, HTTPError
+
+# Fix Windows console encoding issues
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -36,10 +42,10 @@ DATASETS = {
     "cmapss": {
         "description": "NASA C-MAPSS Turbofan Engine Degradation Simulation",
         "urls": [
-            # Primary: GitHub mirror with direct zip
-            "https://github.com/makinarocks/awesome-industrial-machine-datasets/raw/master/data-files/NASA-CMAPS/CMAPSSData.zip",
-            # Fallback mirrors
-            "https://raw.githubusercontent.com/Azure/lstms_for_predictive_maintenance/master/CMAPSSData.zip",
+            # Primary: Zenodo archive (~12 MB, the classic FD001-FD004 dataset)
+            "https://zenodo.org/records/263309/files/CMAPSSData.zip",
+            # Fallback: Kaggle-hosted mirror
+            "https://raw.githubusercontent.com/kpeters/exploring-nasas-turbofan-dataset/master/CMAPSSData.zip",
         ],
         "output_dir": DATA_DIR / "cmapss",
         "zip_name": "CMAPSSData.zip",
@@ -86,7 +92,7 @@ def progress_hook(block_num, block_size, total_size):
     downloaded = block_num * block_size
     if total_size > 0:
         pct = min(100, downloaded * 100 // total_size)
-        bar = "█" * (pct // 2) + "░" * (50 - pct // 2)
+        bar = "#" * (pct // 2) + "-" * (50 - pct // 2)
         mb_down = downloaded / (1024 * 1024)
         mb_total = total_size / (1024 * 1024)
         sys.stdout.write(f"\r  [{bar}] {pct}% ({mb_down:.1f}/{mb_total:.1f} MB)")
@@ -105,8 +111,8 @@ def download_file(urls: list, dest_path: Path) -> bool:
             urlretrieve(url, str(dest_path), reporthook=progress_hook)
             print()  # newline after progress bar
             return True
-        except (URLError, OSError) as e:
-            print(f"\n  ⚠ Failed: {e}")
+        except (URLError, HTTPError, OSError) as e:
+            print(f"\n  [!] Failed: {e}")
             if i < len(urls) - 1:
                 print("  Trying next mirror...")
     return False
@@ -153,10 +159,10 @@ def validate_dataset(output_dir: Path, expected_files: list, validation: dict) -
                 # Move to expected location
                 found[0].rename(fpath)
             else:
-                print(f"  ✗ Missing: {fname}")
+                print(f"  [X] Missing: {fname}")
                 all_ok = False
                 continue
-        print(f"  ✓ Found: {fname} ({fpath.stat().st_size / 1024:.0f} KB)")
+        print(f"  [OK] Found: {fname} ({fpath.stat().st_size / 1024:.0f} KB)")
 
     # Check line counts where specified
     for fname, constraints in validation.items():
@@ -167,9 +173,9 @@ def validate_dataset(output_dir: Path, expected_files: list, validation: dict) -
             min_lines = constraints.get("min_lines", 0)
             max_lines = constraints.get("max_lines", float('inf'))
             if min_lines <= line_count <= max_lines:
-                print(f"  ✓ {fname}: {line_count} lines (expected {min_lines}-{max_lines})")
+                print(f"  [OK] {fname}: {line_count} lines (expected {min_lines}-{max_lines})")
             else:
-                print(f"  ⚠ {fname}: {line_count} lines (expected {min_lines}-{max_lines})")
+                print(f"  [!] {fname}: {line_count} lines (expected {min_lines}-{max_lines})")
                 all_ok = False
 
     return all_ok
@@ -199,10 +205,10 @@ def download_dataset(name: str) -> bool:
         print(f"  Dataset directory already exists: {output_dir}")
         print(f"  Validating existing files...")
         if validate_dataset(output_dir, config["expected_files"], config["validation"]):
-            print(f"  ✓ Dataset already downloaded and valid. Skipping.")
+            print(f"  [OK] Dataset already downloaded and valid. Skipping.")
             return True
         else:
-            print(f"  ⚠ Existing data incomplete. Re-downloading...")
+            print(f"  [!] Existing data incomplete. Re-downloading...")
 
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -210,7 +216,7 @@ def download_dataset(name: str) -> bool:
     # Download
     print(f"\n  Downloading {config['zip_name']}...")
     if not download_file(config["urls"], zip_path):
-        print(f"  ✗ All download URLs failed for {name}.")
+        print(f"  [X] All download URLs failed for {name}.")
         print(f"  Please download manually and place in: {output_dir}")
         return False
 
@@ -218,7 +224,7 @@ def download_dataset(name: str) -> bool:
     try:
         extract_zip(zip_path, output_dir)
     except zipfile.BadZipFile:
-        print(f"  ✗ Downloaded file is not a valid ZIP archive.")
+        print(f"  [X] Downloaded file is not a valid ZIP archive.")
         zip_path.unlink(missing_ok=True)
         return False
 
@@ -228,11 +234,11 @@ def download_dataset(name: str) -> bool:
     # Validate
     print(f"\n  Validating extracted files...")
     if validate_dataset(output_dir, config["expected_files"], config["validation"]):
-        print(f"\n  ✓ {name} dataset ready!")
+        print(f"\n  [OK] {name} dataset ready!")
         return True
     else:
-        print(f"\n  ⚠ {name} dataset downloaded but some validations failed.")
-        print(f"     Files are in {output_dir} — check manually.")
+        print(f"\n  [!] {name} dataset downloaded but some validations failed.")
+        print(f"     Files are in {output_dir} -- check manually.")
         return True  # Still consider it a success if files are present
 
 
@@ -265,7 +271,7 @@ def main():
     print("  Download Summary")
     print(f"{'='*60}")
     for name, success in results.items():
-        status = "✓ Ready" if success else "✗ Failed"
+        status = "[OK] Ready" if success else "[X] Failed"
         print(f"  {status}: {name}")
 
     if all(results.values()):
