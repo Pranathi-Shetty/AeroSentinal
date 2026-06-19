@@ -34,11 +34,11 @@ function ZoneMesh({
   useFrame((state) => {
     if (!materialRef.current) return;
     if (isWarning) {
-      // Pulse emissive intensity when in warning/critical state
+      // Pulse emissive intensity when in warning/critical state — boosted to be visible without bloom
       const pulse = (Math.sin(state.clock.elapsedTime * 4) + 1) / 2;
-      materialRef.current.emissiveIntensity = 0.5 + pulse * intensity * 2;
+      materialRef.current.emissiveIntensity = 1.2 + pulse * intensity * 4;
     } else {
-      materialRef.current.emissiveIntensity = 0.5;
+      materialRef.current.emissiveIntensity = 1.2;
     }
   });
 
@@ -48,7 +48,7 @@ function ZoneMesh({
         ref={materialRef}
         color={color}
         emissive={color}
-        emissiveIntensity={0.5}
+        emissiveIntensity={1.2}
         transparent
         opacity={baseOpacity}
         wireframe={isWarning}

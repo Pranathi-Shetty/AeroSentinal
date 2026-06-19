@@ -3,7 +3,6 @@
 import { useEffect, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { PresentationControls, Environment } from "@react-three/drei";
-import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { useStore, SubsystemHealth } from "@/lib/store";
 import { Activity, Thermometer, Droplets, ArrowDownToLine, Zap, Wind, AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react";
 import clsx from "clsx";
@@ -101,9 +100,7 @@ export default function AircraftDetailPage({ params }: { params: { id: string } 
               <AircraftModel />
             </Suspense>
           </PresentationControls>
-          <EffectComposer>
-            <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} height={300} intensity={1.5} />
-          </EffectComposer>
+
         </Canvas>
         {/* Loading overlay — OUTSIDE Canvas so it's valid HTML */}
         <Suspense fallback={
