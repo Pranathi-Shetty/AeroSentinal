@@ -11,7 +11,6 @@ import dynamic from "next/dynamic";
 
 const AircraftModel = dynamic(() => import("@/components/3d/AircraftModel"), {
   ssr: false,
-  loading: () => <div className="absolute inset-0 flex items-center justify-center text-gray-500">Loading 3D Twin...</div>
 });
 
 export default function AircraftDetailPage({ params }: { params: { id: string } }) {
@@ -106,6 +105,14 @@ export default function AircraftDetailPage({ params }: { params: { id: string } 
             <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} height={300} intensity={1.5} />
           </EffectComposer>
         </Canvas>
+        {/* Loading overlay — OUTSIDE Canvas so it's valid HTML */}
+        <Suspense fallback={
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="text-xs text-gray-500 font-mono tracking-widest animate-pulse">LOADING 3D TWIN...</div>
+          </div>
+        }>
+          <span className="hidden" />
+        </Suspense>
         
         {/* 3D View Toolbar (Dissect) */}
         <div className="absolute top-6 left-6 glass-panel p-4 flex flex-col gap-2">
