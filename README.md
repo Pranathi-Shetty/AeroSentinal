@@ -38,74 +38,165 @@ Key innovations:
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ System Architecture — 6-Layer Multi-Domain Ensemble
 
-The system is structured across 6 interconnected layers, dynamically correlating data from 12 distinct subsystems into a central anomaly engine.
+> 12 Subsystems · 15.1M+ Data Points · 273 System Variables · 17+ ML Models
 
-```mermaid
-graph TD
-    classDef main fill:#1e40af,stroke:#60a5fa,stroke-width:3px,color:#fff;
-    classDef sys fill:#334155,stroke:#94a3b8,stroke-width:1px,color:#fff;
-    classDef edge fill:#065f46,stroke:#34d399,stroke-width:2px,color:#fff;
-    
-    Center((Cross-Domain<br/>Fusion Engine)):::main
-
-    E[Turbofan Engine<br/>NASA C-MAPSS]:::sys
-    A[APU System<br/>EGT/Vibration]:::sys
-    ECS[ECS System<br/>Boeing 737]:::sys
-    LG[Landing Gear<br/>AeroTwin 787]:::sys
-    Hyd[Hydraulics<br/>UCI Dataset]:::sys
-    EMA[EMA Actuators<br/>NASA FLEA]:::sys
-    Elec[Electrical<br/>NASA ADAPT]:::sys
-    Bat[Li-ion Battery<br/>HIRF]:::sys
-    CFRP[CFRP Wings<br/>NASA Ames]:::sys
-    NLP[Maint. Logs<br/>MaintNet]:::sys
-
-    E -.->|BiLSTM + Attention| Center
-    A -.->|Random Forest| Center
-    ECS -.->|TCA Model| Center
-    LG -.->|XGBoost| Center
-    Hyd -.->|1D Conv Autoencoder| Center
-    EMA -.->|BCA-DATrans| Center
-    Elec -.->|Bayesian Net| Center
-    Bat -.->|TCN Transfer| Center
-    CFRP -.->|CNN Spectrogram| Center
-    NLP -.->|Fine-tuned LLaMA| Center
-
-    Center ==> UI[React Three Fiber<br/>3D Dashboard]:::edge
-    Center ==> SIM[What-If Fault<br/>Simulator]:::edge
-    Center ==> ACARS[ACARS Edge<br/>Alerts]:::edge
-    Center ==> GANTT[Fleet Maintenance<br/>Planner]:::edge
+```
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                          ① MULTI-SUBSYSTEM DATA SOURCES (12 Subsystems)                            ║
+║                                                                                                    ║
+║   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         ║
+║   │  Turbofan    │  │     APU      │  │     ECS      │  │ Landing Gear │  │Carbon Brakes │         ║
+║   │  Engine      │  │              │  │              │  │              │  │              │         ║
+║   │ C-MAPSS      │  │ EGT/N1/Vib  │  │ Boeing 737   │  │ AeroTwin 787 │  │ Brake Thermo │         ║
+║   │ 21 sensors   │  │ Bleed Press  │  │ T1-T6, P1-P4 │  │ 15.1M pts    │  │ Core Temp    │         ║
+║   └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘         ║
+║          │                 │                 │                 │                 │                  ║
+║   ┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴───────┐         ║
+║   │    EMA /     │  │  Hydraulics  │  │  Electrical  │  │   Li-ion     │  │  Structural  │         ║
+║   │  Actuators   │  │              │  │   / ADAPT    │  │   Battery    │  │   / CFRP     │         ║
+║   │ NASA FLEA    │  │ UCI Dataset  │  │ NASA ADAPT   │  │ HIRF 18650   │  │ NASA Ames    │         ║
+║   │ Ball-screw   │  │ 43,680 feat  │  │ 273 vars 2Hz │  │ Capacity fade│  │ 16 PZT sens  │         ║
+║   └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘         ║
+║          │                 │                 │                 │                 │                  ║
+║   ┌──────┴─────────────────┴───────┐  ┌──────┴─────────────────┴───────────────────┘                ║
+║   │  QAR Telemetry (NGAFID-MC)    │  │  Maintenance Logs NLP (MaintNet)                            ║
+║   │  11,500 hrs · 23 flight params│  │  6,169 records · 76,866 tokens                              ║
+║   └──────────────┬─────────────────┘  └──────────────┬──────────────────                            ║
+╚══════════════════╪═══════════════════════════════════╪══════════════════════════════════════════════╝
+                   │                                   │
+         ══════════╪═══════════════════════════════════╪══════════════
+                   ▼                                   ▼
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                               ② DATA INGESTION LAYER                                               ║
+║                                                                                                    ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                  ║
+║   │  Thermodynamic  │ │    Kinematic    │ │    Acoustic     │ │  Avionics Bus   │                  ║
+║   │    Streams      │ │   Telemetry     │ │   Emissions     │ │   Electrical    │                  ║
+║   │   1–4 Hz cont.  │ │ Vel/Disp/Vib   │ │ PZT burst waves │ │  2 Hz sampling  │                  ║
+║   └────────┬────────┘ └────────┬────────┘ └────────┬────────┘ └────────┬────────┘                  ║
+║            │                   │                   │                   │                            ║
+║   ┌────────┴────────┐ ┌────────┴────────┐          │                   │                            ║
+║   │  QAR Flight     │ │  NLP Text Logs  │          │                   │                            ║
+║   │  Parameters     │ │  Batch Process  │          │                   │                            ║
+║   │  1 Hz per-sec   │ │  Digital submit │          │                   │                            ║
+║   └────────┬────────┘ └────────┬────────┘          │                   │                            ║
+╚════════════╪════════════════════╪══════════════════╪═══════════════════╪════════════════════════════╝
+             │                    │                  │                   │
+             ▼                    ▼                  ▼                   ▼
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                        ③ FEATURE ENGINEERING & PREPROCESSING                                       ║
+║                                                                                                    ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                  ║
+║   │  Min-Max +      │ │  30-Cycle       │ │  Continuous     │ │  TF-IDF + SVD   │                  ║
+║   │  Z-Score Norm   │ │  Sliding Window │ │  Wavelet (CWT)  │ │  (LSA)          │                  ║
+║   └─────────────────┘ └─────────────────┘ └─────────────────┘ └─────────────────┘                  ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                  ║
+║   │  SHAP Feature   │ │     SMOTE       │ │  Transfer Comp  │ │  Levenshtein    │                  ║
+║   │  Selection      │ │  Oversampling   │ │  Analysis (TCA) │ │  Spell-Check    │                  ║
+║   │  21 → 14 vars   │ │  Rare faults    │ │  Domain align   │ │  Aviation abbr  │                  ║
+║   └────────┬────────┘ └────────┬────────┘ └────────┬────────┘ └────────┬────────┘                  ║
+╚════════════╪════════════════════╪══════════════════╪═══════════════════╪════════════════════════════╝
+             │                    │                  │                   │
+             ▼                    ▼                  ▼                   ▼
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                         ④ DOMAIN-SPECIFIC MODEL ENSEMBLE (17+ Models)                              ║
+║                                                                                                    ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                  ║
+║   │  BiLSTM +       │ │  Transformer    │ │   BCA-DATrans   │ │  1D Conv        │                  ║
+║   │  Attention      │ │  Encoder        │ │  Cross-Attn DA  │ │  Autoencoder    │                  ║
+║   │  Engine RUL     │ │  Multi-fault    │ │  EMA Actuators  │ │  Hydraulics     │                  ║
+║   └─────────────────┘ └─────────────────┘ └─────────────────┘ └─────────────────┘                  ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                  ║
+║   │  Gaussian Proc  │ │  Bayesian Net   │ │  TCN + Transfer │ │  CNN on CWT     │                  ║
+║   │  Regression     │ │  (503 nodes)    │ │  Learning       │ │  Images         │                  ║
+║   │  EMA spall prog │ │  ADAPT 0.26ms   │ │  Battery SOH    │ │  CFRP delam     │                  ║
+║   └─────────────────┘ └─────────────────┘ └─────────────────┘ └─────────────────┘                  ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                  ║
+║   │  Conv-MHSA /    │ │  Random Forest  │ │  LLaMA-3.2-3B  │ │  Gemma-3-4B    │                  ║
+║   │  DUTSAM         │ │  + CART         │ │  (fine-tuned)   │ │  (fine-tuned)   │                  ║
+║   │  QAR hard-land  │ │  APU health     │ │  Repair recom.  │ │  Repair recom.  │                  ║
+║   └────────┬────────┘ └────────┬────────┘ └────────┬────────┘ └────────┬────────┘                  ║
+╚════════════╪════════════════════╪══════════════════╪═══════════════════╪════════════════════════════╝
+             │                    │                  │                   │
+             ▼                    ▼                  ▼                   ▼
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                          ⑤ FUSION ALERT & ANOMALY ENGINE                                           ║
+║                                                                                                    ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                                      ║
+║   │  Multivariate   │ │  SLIDE Hier.    │ │  Kalman / Bond  │                                      ║
+║   │  Anomaly Det.   │ │  Fault Filter   │ │  Graph Isolate  │                                      ║
+║   │  Cross-subsys   │ │  False alarm ↓  │ │  LRU-level dx   │                                      ║
+║   └─────────────────┘ └─────────────────┘ └─────────────────┘                                      ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                                      ║
+║   │  RUL Confidence │ │  AOG Cost       │ │  ACARS 220-char │                                      ║
+║   │  Interval       │ │  Scorer         │ │  Alert Compiler │                                      ║
+║   │  Ensemble uncert│ │  $150k/hr risk  │ │  Compressed msg │                                      ║
+║   └────────┬────────┘ └────────┬────────┘ └────────┬────────┘                                      ║
+╚════════════╪════════════════════╪══════════════════╪═══════════════════════════════════════════════╝
+             │                    │                  │
+             ▼                    ▼                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                       ⑥ EDGE INFERENCE + 3D VISUALIZATION DASHBOARD                                ║
+║                                                                                                    ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                                      ║
+║   │  ONNX + TensorRT│ │  React Three    │ │  Live Recharts  │                                      ║
+║   │  INT8 / FP16    │ │  Fiber 3D       │ │  Sensor Streams │                                      ║
+║   │  < 5ms latency  │ │  Aircraft Model │ │  Multi-modal    │                                      ║
+║   └─────────────────┘ └─────────────────┘ └─────────────────┘                                      ║
+║   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                                      ║
+║   │  What-If Fault  │ │  Fleet Maint.   │ │  NLP Repair     │                                      ║
+║   │  Simulator      │ │  Planner        │ │  Recommender    │                                      ║
+║   │  Inject + RUL ↓ │ │  Gantt schedule │ │  LLM chat iface │                                      ║
+║   └─────────────────┘ └─────────────────┘ └─────────────────┘                                      ║
+╚══════════════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
-**1. Multi-Subsystem Data Sources Layer**
-Integrates 12 distinct datasets representing the entire airframe:
-* **Propulsion & Power:** Turbofan Engine (C-MAPSS), APU (EGT/Vibration)
-* **Pneumatics & Hydraulics:** ECS (Boeing 737-200), Hydraulics (UCI Hydraulic)
-* **Mechanical & Structural:** Landing Gear (AeroTwin 787), Carbon Brakes, EMA/Actuators (NASA FLEA), Structural/CFRP (NASA Ames)
-* **Electrical & Avionics:** Electrical (NASA ADAPT), Li-ion Battery (HIRF)
-* **Telemetry & Text:** QAR Flight Parameters, NLP Maintenance Logs (MaintNet)
+### Layer Details
 
-**2. Data Ingestion Layer**
-Routes heterogeneous data streams including Thermodynamic Streams (1-4 Hz), Kinematic Telemetry, Acoustic Emissions (PZT bursts), Avionics Bus data (2 Hz), QAR parameters, and textual NLP logs.
+<details>
+<summary><b>① Data Sources — 12 Subsystems, 9+ Datasets</b></summary>
 
-**3. Feature Engineering & Preprocessing**
-Domain-specific pipelines apply Min-Max & Z-Score normalization, Continuous Wavelet Transforms (CWT) for acoustic data, TF-IDF + SVD for text, and Transfer Component Analysis (TCA) for cross-domain alignment.
+| Subsystem | Dataset | Key Sensors |
+| :--- | :--- | :--- |
+| Turbofan Engine | NASA C-MAPSS (FD001–FD004) | T2/T24/T30, Ps30, NF/NC shaft speeds (21 sensors) |
+| APU | EGT Monitoring / RIF | EGT startup peaks, N1, vibration, bleed pressure |
+| ECS | Boeing 737-200 Simulation | T1-T6 temps, P1-P4 pressures, RH, bypass valve |
+| Landing Gear | AeroTwin Boeing 787 (15.1M pts) | TP2/TP3 pneumatic, H1 separator, DV valve state |
+| Carbon Brakes | Operational Telemetry | Landstrike velocity, aircraft mass, brake-core temp |
+| EMA / Actuators | NASA FLEA Testbed | Motor current/voltage, ball-screw spall, parasitic loads |
+| Hydraulics | UCI Condition Monitoring (43,680 feat) | PS1-PS6 pressure, TS1-TS4 temp, FS1/FS2 flow, VS1 vibration |
+| Electrical / ADAPT | NASA ADAPT (273 vars @ 2Hz) | Relay states, bus voltages/currents, CB positions (128 sensors) |
+| Li-ion Battery | HIRF + 18650 Aging | Terminal voltage, current, temperature, impedance |
+| Structural / CFRP | NASA Ames SMART Layer | Lamb-wave 1D/2D, phase velocity, 16 PZT sensors |
+| QAR Telemetry | NGAFID-MC (11,500 hrs) | GPS alt, pitch, vertical accel, fatigue load (23 params) |
+| Maintenance Logs | MaintNet (6,169 records) | "Problem" + "Action" text pairs, abbreviations |
 
-**4. Domain-Specific Model Ensemble**
-Parallel specialized models for each subsystem to prevent cross-domain noise contamination:
-* BiLSTM + Attention (Engine)
-* 1D Conv Autoencoder (Hydraulics)
-* Random Forest + CART (APU)
-* Fine-tuned LLaMA-3.2 / Gemma-3 (NLP Repair)
+</details>
 
-**5. Fusion Alert & Anomaly Engine**
-The brain of the system. It aggregates outputs, performs cross-subsystem correlation (SLIDE Hierarchical Filter), suppresses false alarms, and generates AOG cost impact scores.
+<details>
+<summary><b>④ Model Ensemble — 17+ Specialized Models</b></summary>
 
-**6. Edge Inference & 3D Visualization Dashboard**
-Models are quantized (INT8/FP16) using TensorRT for sub-5ms edge inference. Results are downlinked via ACARS and visualized in a React Three Fiber 3D dashboard featuring a What-If Fault Simulator and Fleet Maintenance Planner.
+| Model | Subsystem Target | Output |
+| :--- | :--- | :--- |
+| BiLSTM + Attention | Engine (C-MAPSS) | RUL (cycles to failure) |
+| Transformer Encoder | Engine FD004 (multi-fault) | RUL (multi-condition) |
+| Random Forest + CART | APU health classification | Health index, EGT margin alert |
+| TCA / JDA | ECS cross-condition adaptation | Heat-exchanger efficiency Δ |
+| XGBoost + SMOTE | Landing Gear bushing wear | Bushing wear class, overhaul date |
+| BCA-DATrans | EMA actuator faults | Spall size, jam probability |
+| 1D Conv Autoencoder | Hydraulic anomaly detection | Pump leak severity, valve lag |
+| Bayesian Network (503 nodes) | Electrical fault isolation | Fault isolation in 0.26ms |
+| TCN + Transfer Learning | Li-ion battery SOH | SOH, Remaining Flying Time |
+| CNN on CWT Spectrograms | CFRP delamination | Delamination size, structural RUL |
+| Conv-MHSA / DUTSAM | QAR flight telemetry | Hard-landing flag, fatigue load |
+| LLaMA-3.2-3B (fine-tuned) | Maintenance log parsing | Repair step recommendation |
+| Gemma-3-4B (fine-tuned) | Maintenance log parsing | Repair step recommendation |
+| Gaussian Process Regression | EMA spall prognostics | RUL with uncertainty bounds |
+| Bayesian Particle Filter | Structural SHM | Probabilistic RUL update |
 
-*(For the complete visual architecture diagram, please refer to `Holistic_Aircraft_PHM_Updated_Architecture.pdf` in the project root).*
+</details>
 
 ---
 
